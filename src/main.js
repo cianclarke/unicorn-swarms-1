@@ -3,6 +3,8 @@ import { InputManager } from './engine/InputManager.js';
 import { Arena } from './world/Arena.js';
 import { CameraSystem } from './world/Camera.js';
 import { PlayerUnicorn } from './entities/PlayerUnicorn.js';
+import { ChargeSystem } from './combat/ChargeSystem.js';
+import { DamageSystem } from './combat/DamageSystem.js';
 import { HUD } from './ui/HUD.js';
 import { Nameplates } from './ui/Nameplates.js';
 import { Notifications } from './ui/Notifications.js';
@@ -20,6 +22,9 @@ const input = new InputManager();
 const player = new PlayerUnicorn(engine.scene);
 player.position.set(0, 0, 0);
 
+// All unicorns in the game (player + bots added later)
+const allUnicorns = [player];
+
 // Third-person camera
 const cameraSystem = new CameraSystem(engine.camera);
 cameraSystem.follow(player);
@@ -29,22 +34,37 @@ const hud = new HUD();
 const nameplates = new Nameplates(engine.camera);
 const notifications = new Notifications();
 
+// Combat systems
+const damageSystem = new DamageSystem(notifications);
+const chargeSystem = new ChargeSystem(damageSystem, hud);
+chargeSystem.register(player);
+
 // Register systems with the game loop
 engine.addSystem({
   fixedUpdate(dt) {
+    // Handle charge input
+    if (input.charge) {
+      chargeSystem.tryCharge(player);
+    }
+
     player.fixedUpdate(dt, input);
+    chargeSystem.fixedUpdate(dt, allUnicorns);
   },
   update(dt) {
     cameraSystem.update(dt);
+    chargeSystem.update(dt, engine.scene);
   },
 });
 engine.addSystem(hud);
 engine.addSystem(nameplates);
 engine.addSystem(notifications);
 
-// Expose UI for other systems to drive
+// Expose systems for other modules to use
 engine.hud = hud;
 engine.nameplates = nameplates;
 engine.notifications = notifications;
+engine.chargeSystem = chargeSystem;
+engine.damageSystem = damageSystem;
+engine.allUnicorns = allUnicorns;
 
 engine.start();

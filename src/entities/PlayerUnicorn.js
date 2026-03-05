@@ -10,9 +10,16 @@ import {
 export class PlayerUnicorn extends Unicorn {
   constructor(scene) {
     super(scene, { isPlayer: true });
+    this._isPlayer = true;
+    this.name = 'Player';
   }
 
   fixedUpdate(dt, input) {
+    if (this.state === 'eliminated') return;
+
+    // Don't allow rotation or movement override while charging
+    if (this.state === 'charging') return;
+
     // Rotation
     if (input.left) this.rotation.y += ROTATION_SPEED * dt;
     if (input.right) this.rotation.y -= ROTATION_SPEED * dt;
