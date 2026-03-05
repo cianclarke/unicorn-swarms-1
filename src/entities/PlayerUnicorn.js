@@ -30,12 +30,12 @@ export class PlayerUnicorn extends Unicorn {
 
     if (input.forward) {
       speed = BASE_MOVE_SPEED * FORWARD_SPEED_BONUS;
-      this.state = 'moving';
+      if (this.state !== 'airborne') this.state = 'moving';
     } else if (input.backward) {
       speed = -BASE_MOVE_SPEED * BACKWARD_SPEED_PENALTY;
-      this.state = 'moving';
+      if (this.state !== 'airborne') this.state = 'moving';
     } else if (!input.left && !input.right) {
-      this.state = 'idle';
+      if (this.state !== 'airborne') this.state = 'idle';
     }
 
     if (speed !== 0) {

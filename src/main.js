@@ -5,6 +5,7 @@ import { CameraSystem } from './world/Camera.js';
 import { PlayerUnicorn } from './entities/PlayerUnicorn.js';
 import { ChargeSystem } from './combat/ChargeSystem.js';
 import { DamageSystem } from './combat/DamageSystem.js';
+import { JumpSystem } from './combat/JumpSystem.js';
 import { HUD } from './ui/HUD.js';
 import { Nameplates } from './ui/Nameplates.js';
 import { Notifications } from './ui/Notifications.js';
@@ -24,6 +25,9 @@ player.position.set(0, 0, 0);
 
 // All unicorns in the game (player + bots added later)
 const allUnicorns = [player];
+
+// Jump system
+const jumpSystem = new JumpSystem(player, input);
 
 // Third-person camera
 const cameraSystem = new CameraSystem(engine.camera);
@@ -49,6 +53,7 @@ engine.addSystem({
 
     player.fixedUpdate(dt, input);
     chargeSystem.fixedUpdate(dt, allUnicorns);
+    jumpSystem.fixedUpdate(dt);
   },
   update(dt) {
     cameraSystem.update(dt);
