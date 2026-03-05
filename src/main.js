@@ -3,6 +3,7 @@ import { InputManager } from './engine/InputManager.js';
 import { Arena } from './world/Arena.js';
 import { CameraSystem } from './world/Camera.js';
 import { PlayerUnicorn } from './entities/PlayerUnicorn.js';
+import { JumpSystem } from './combat/JumpSystem.js';
 import { HUD } from './ui/HUD.js';
 import { Nameplates } from './ui/Nameplates.js';
 import { Notifications } from './ui/Notifications.js';
@@ -20,6 +21,9 @@ const input = new InputManager();
 const player = new PlayerUnicorn(engine.scene);
 player.position.set(0, 0, 0);
 
+// Jump system
+const jumpSystem = new JumpSystem(player, input);
+
 // Third-person camera
 const cameraSystem = new CameraSystem(engine.camera);
 cameraSystem.follow(player);
@@ -33,6 +37,7 @@ const notifications = new Notifications();
 engine.addSystem({
   fixedUpdate(dt) {
     player.fixedUpdate(dt, input);
+    jumpSystem.fixedUpdate(dt);
   },
   update(dt) {
     cameraSystem.update(dt);
