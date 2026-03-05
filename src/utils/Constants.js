@@ -38,6 +38,14 @@ export const BOT_DODGE_CHANCE = 0.5;        // 40-60% range
 // Physics
 export const PHYSICS_TIMESTEP = 1 / 60;     // 60hz fixed step
 
+// Network
+export const NET_TICK_RATE = 20;              // server broadcasts per second
+export const NET_TICK_INTERVAL = 1 / 20;      // 50ms between server ticks
+export const NET_INTERPOLATION_DELAY = 100;   // ms buffer for remote player interpolation
+export const NET_PREDICTION_THRESHOLD = 200;  // ms latency before prediction kicks in
+export const NET_MAX_ROOM_PLAYERS = 8;
+export const NET_DEFAULT_PORT = 3001;
+
 // Rendering
 export const FOG_NEAR = 40;
 export const FOG_FAR = 100;

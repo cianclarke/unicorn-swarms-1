@@ -4,6 +4,7 @@ const INIT_STEPS = [
   'Creating renderer',
   'Building arena',
   'Spawning player',
+  'Connecting network',
   'Spawning bots',
   'Setting up systems',
   'Starting game',
@@ -25,6 +26,17 @@ function checkWebGL() {
   return true;
 }
 
+function getInputSnapshot(input) {
+  return {
+    forward: input.forward,
+    backward: input.backward,
+    left: input.left,
+    right: input.right,
+    charge: input.charge,
+    jump: input.jump,
+  };
+}
+
 async function init() {
   if (!checkWebGL()) return;
 
@@ -43,6 +55,7 @@ async function init() {
   loading.advance('Spawning player...');
   const { InputManager } = await import('./engine/InputManager.js');
   const { PlayerUnicorn } = await import('./entities/PlayerUnicorn.js');
+  const { Unicorn } = await import('./entities/Unicorn.js');
   const { CameraSystem } = await import('./world/Camera.js');
   const { JumpSystem } = await import('./combat/JumpSystem.js');
 
@@ -52,12 +65,22 @@ async function init() {
 
   const allUnicorns = [player];
   const bots = [];
+  const remoteUnicorns = new Map();
 
   const jumpSystem = new JumpSystem(player, input);
   const cameraSystem = new CameraSystem(engine.camera);
   cameraSystem.follow(player);
 
-  // Step 4: Bots
+  // Step 4: Network
+  loading.advance('Connecting network...');
+  const { NetworkManager } = await import('./network/NetworkManager.js');
+  const { StateSync } = await import('./network/StateSync.js');
+
+  const network = new NetworkManager();
+  const stateSync = new StateSync(network);
+  let multiplayer = false;
+
+  // Step 5: Bots + combat
   loading.advance('Spawning bots...');
   const { BotUnicorn } = await import('./entities/BotUnicorn.js');
   const { MIN_UNICORNS, MAX_UNICORNS } = await import('./utils/Constants.js');
@@ -74,25 +97,99 @@ async function init() {
   const chargeSystem = new ChargeSystem(damageSystem, hud);
   chargeSystem.register(player);
 
-  const humanPlayers = 1;
-  const totalTarget = MIN_UNICORNS + Math.floor(Math.random() * (MAX_UNICORNS - MIN_UNICORNS + 1));
-  const botCount = Math.max(0, totalTarget - humanPlayers);
-
-  for (let i = 0; i < botCount; i++) {
-    const difficulty = 0.4 + Math.random() * 0.6;
-    const bot = new BotUnicorn(engine.scene, { difficulty });
-
-    const angle = (i / botCount) * Math.PI * 2;
-    const radius = 10 + Math.random() * 15;
-    bot.position.set(Math.sin(angle) * radius, 0, Math.cos(angle) * radius);
-    bot.rotation.y = angle + Math.PI;
-
-    chargeSystem.register(bot);
-    allUnicorns.push(bot);
-    bots.push(bot);
+  // Remote unicorn helpers
+  function getOrCreateRemoteUnicorn(id) {
+    if (remoteUnicorns.has(id)) return remoteUnicorns.get(id);
+    const unicorn = new Unicorn(engine.scene);
+    unicorn.name = id;
+    remoteUnicorns.set(id, unicorn);
+    chargeSystem.register(unicorn);
+    allUnicorns.push(unicorn);
+    return unicorn;
   }
 
-  // Step 5: Wire systems
+  function removeRemoteUnicorn(id) {
+    const unicorn = remoteUnicorns.get(id);
+    if (!unicorn) return;
+    unicorn.dispose(engine.scene);
+    remoteUnicorns.delete(id);
+    const idx = allUnicorns.indexOf(unicorn);
+    if (idx !== -1) allUnicorns.splice(idx, 1);
+    stateSync.removePlayer(id);
+  }
+
+  // Listen for server state updates
+  network.on('state', (msg) => {
+    stateSync.onServerState(msg);
+
+    const now = Date.now();
+    const activeIds = new Set();
+
+    for (const playerData of msg.players) {
+      if (playerData.id === network.playerId) continue;
+      activeIds.add(playerData.id);
+
+      const interpolated = stateSync.getInterpolatedState(playerData.id, now);
+      if (!interpolated) continue;
+
+      const unicorn = getOrCreateRemoteUnicorn(playerData.id);
+      unicorn.position.set(interpolated.x, interpolated.y, interpolated.z);
+      unicorn.rotation.y = interpolated.ry;
+      unicorn.health = interpolated.health;
+      unicorn.state = interpolated.state;
+      unicorn.name = interpolated.name || playerData.id;
+      unicorn.mesh.visible = interpolated.state !== 'eliminated';
+    }
+
+    // Remove players no longer in snapshot
+    for (const id of remoteUnicorns.keys()) {
+      if (!activeIds.has(id)) {
+        removeRemoteUnicorn(id);
+      }
+    }
+
+    // Reconcile local player (prediction) when latency >200ms
+    if (network.latency > 200) {
+      stateSync.reconcileLocalPlayer(player, (inp, dt) => {
+        player.fixedUpdate(dt, inp);
+      });
+    }
+  });
+
+  network.on('leave', (msg) => {
+    removeRemoteUnicorn(msg.playerId);
+  });
+
+  // Try connecting to multiplayer server
+  try {
+    await network.connect();
+    multiplayer = true;
+  } catch {
+    multiplayer = false;
+  }
+
+  // Spawn local bots when not in multiplayer mode
+  if (!multiplayer) {
+    const humanPlayers = 1;
+    const totalTarget = MIN_UNICORNS + Math.floor(Math.random() * (MAX_UNICORNS - MIN_UNICORNS + 1));
+    const botCount = Math.max(0, totalTarget - humanPlayers);
+
+    for (let i = 0; i < botCount; i++) {
+      const difficulty = 0.4 + Math.random() * 0.6;
+      const bot = new BotUnicorn(engine.scene, { difficulty });
+
+      const angle = (i / botCount) * Math.PI * 2;
+      const radius = 10 + Math.random() * 15;
+      bot.position.set(Math.sin(angle) * radius, 0, Math.cos(angle) * radius);
+      bot.rotation.y = angle + Math.PI;
+
+      chargeSystem.register(bot);
+      allUnicorns.push(bot);
+      bots.push(bot);
+    }
+  }
+
+  // Step 6: Wire systems
   loading.advance('Setting up systems...');
   engine.addSystem({
     fixedUpdate(dt) {
@@ -102,11 +199,21 @@ async function init() {
 
       player.fixedUpdate(dt, input);
 
-      for (const bot of bots) {
-        bot.fixedUpdate(dt, allUnicorns, chargeSystem);
+      // Send input to server if connected
+      if (multiplayer && network.connected) {
+        const snapshot = getInputSnapshot(input);
+        const seq = network.sendInput(snapshot);
+        stateSync.pushLocalInput(seq, snapshot);
       }
 
-      chargeSystem.fixedUpdate(dt, allUnicorns);
+      // Update local bot AI (only in offline mode)
+      if (!multiplayer) {
+        for (const bot of bots) {
+          bot.fixedUpdate(dt, allUnicorns, chargeSystem);
+        }
+        chargeSystem.fixedUpdate(dt, allUnicorns);
+      }
+
       jumpSystem.fixedUpdate(dt);
     },
     update(dt) {
@@ -125,7 +232,7 @@ async function init() {
   engine.damageSystem = damageSystem;
   engine.allUnicorns = allUnicorns;
 
-  // Step 6: Start
+  // Step 7: Start
   loading.advance('Starting game...');
   await loading.hide();
   engine.start();
